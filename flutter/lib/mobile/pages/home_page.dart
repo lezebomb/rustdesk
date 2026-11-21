@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/mobile/pages/server_page.dart';
 import 'package:flutter_hbb/mobile/pages/settings_page.dart';
+import 'package:flutter_hbb/remotedesk/devices_page.dart';
 import 'package:flutter_hbb/web/settings_page.dart';
 import 'package:get/get.dart';
 import '../../common.dart';
@@ -48,6 +49,9 @@ class HomePageState extends State<HomePage> {
   void initPages() {
     _pages.clear();
     if (!bind.isIncomingOnly()) {
+      // RemoteDesk: "My devices" is the home tab; the stock connection page
+      // stays available as a second tab so upstream behaviour is preserved.
+      _pages.add(RdDevicesPage());
       _pages.add(ConnectionPage(
         appBarActions: [],
       ));

@@ -91,6 +91,15 @@ class MainActivity : FlutterActivity() {
             channelTag
         )
         initFlutterChannel(flutterMethodChannel!!)
+        // RemoteDesk: Keystore-backed credential storage for saved device passwords.
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "remotedesk/secure"
+        ).setMethodCallHandler { call, result ->
+            if (!SecureStore.handle(applicationContext, call, result)) {
+                result.notImplemented()
+            }
+        }
         thread {
             try {
                 setCodecInfo()
