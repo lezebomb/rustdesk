@@ -32,6 +32,30 @@ jobs:
   generate-bridge:
     uses: ./.github/workflows/bridge.yml
 
+  # Fast feedback on the Dart layer before the (slow) native builds finish.
+  analyze-dart:
+    needs: [generate-bridge]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.ANDROID_FLUTTER_VERSION }}
+      - name: Restore bridge files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bridge-artifact
+          path: ./
+      - name: flutter analyze
+        run: |
+          cd flutter
+          flutter pub get
+          flutter analyze --no-fatal-infos --no-fatal-warnings 2>&1 | tee analyze.log
+          ! grep -E "error •" analyze.log
+
   build-android:
     needs: [generate-bridge]
     name: build apk ${{ matrix.job.arch }}
