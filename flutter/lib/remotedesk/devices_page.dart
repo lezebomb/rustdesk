@@ -143,6 +143,30 @@ class RdDevicesPageState extends State<RdDevicesPage> {
     );
   }
 
+  /// Presence is reported honestly: the self-hosted OSS server exposes no
+  /// peer-presence API, so a device is only shown as online while a session to
+  /// it is actually live; everything else is "unknown" and tapping connect is
+  /// the real test.
+  Widget _statusChip(RdDevice d) {
+    final connected = gFFI.serverModel.clients.any((e) => e.id == d.id);
+    final label = connected ? translate('Online') : translate('Unknown');
+    final color = connected ? const Color(0xFF2E9E5B) : MyTheme.darkGray;
+    return Tooltip(
+      message: connected
+          ? translate('Session is active')
+          : translate(
+              'No presence API on the self-hosted server: tap Connect to try'),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(label, style: TextStyle(fontSize: 11, color: color)),
+      ),
+    );
+  }
+
   Widget _deviceCard(RdDevice d) {
     final last = d.lastConnected == 0
         ? translate('Never connected')
@@ -167,9 +191,19 @@ class RdDevicesPageState extends State<RdDevicesPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(d.name,
-                        style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w600)),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(d.name,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600)),
+                        ),
+                        SizedBox(width: 8),
+                        _statusChip(d),
+                      ],
+                    ),
                     SizedBox(height: 4),
                     Text('ID: ${formatID(d.id)}',
                         style:
