@@ -26,7 +26,7 @@ env:
   CARGO_NDK_VERSION: "3.1.2"
   NDK_VERSION: "r28c"
   RUST_VERSION: "1.75"
-  VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675b822ed0d"
+  VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
 
 jobs:
   generate-bridge:
