@@ -13,7 +13,7 @@ String _pwKey(String id) => 'rd_pw_$id';
 /// "My devices" home page: one card per paired computer, tap to connect.
 class RdDevicesPage extends StatefulWidget implements PageShape {
   @override
-  final String title = translate('My devices');
+  final String title = '我的设备';
   @override
   final Widget icon = const Icon(Icons.devices_rounded);
   @override
@@ -70,15 +70,15 @@ class RdDevicesPageState extends State<RdDevicesPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(translate('Remove device')),
+        title: Text('删除设备'),
         content: Text('${device.name} (${formatID(device.id)})'),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
-              child: Text(translate('Cancel'))),
+              child: Text('取消')),
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(translate('OK'))),
+              child: Text('删除')),
         ],
       ),
     );
@@ -116,7 +116,7 @@ class RdDevicesPageState extends State<RdDevicesPage> {
                   Icon(Icons.devices_other, size: 64, color: MyTheme.darkGray),
                   SizedBox(height: 12),
                   Center(
-                    child: Text(translate('No devices yet'),
+                    child: Text('还没有添加设备',
                         style: TextStyle(color: MyTheme.darkGray)),
                   ),
                   SizedBox(height: 16),
@@ -124,7 +124,7 @@ class RdDevicesPageState extends State<RdDevicesPage> {
                     child: FilledButton.icon(
                       onPressed: () => _edit(null),
                       icon: Icon(Icons.add),
-                      label: Text(translate('Add device')),
+                      label: Text('添加设备'),
                     ),
                   ),
                 ],
@@ -140,24 +140,23 @@ class RdDevicesPageState extends State<RdDevicesPage> {
           : FloatingActionButton(
               onPressed: () => _edit(null),
               child: Icon(Icons.add),
-              tooltip: translate('Add device'),
+              tooltip: '添加设备',
             ),
     );
   }
 
   /// Presence is reported honestly: the self-hosted OSS server exposes no
   /// peer-presence API, so a device is only shown as online while a session to
-  /// it is actually live; everything else is "unknown" and tapping connect is
-  /// the real test.
+  /// it is actually live; everything else is "not checked" and tapping connect
+  /// is the real test.
   Widget _statusChip(RdDevice d) {
     final connected = gFFI.serverModel.clients.any((e) => e.id == d.id);
-    final label = connected ? translate('Online') : translate('Unknown');
+    final label = connected ? '在线' : '未检测';
     final color = connected ? const Color(0xFF2E9E5B) : MyTheme.darkGray;
     return Tooltip(
       message: connected
-          ? translate('Session is active')
-          : translate(
-              'No presence API on the self-hosted server: tap Connect to try'),
+          ? '当前有活动会话'
+          : '自建服务器没有在线状态接口，点击连接即验证',
       child: Container(
         padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         decoration: BoxDecoration(
@@ -171,7 +170,7 @@ class RdDevicesPageState extends State<RdDevicesPage> {
 
   Widget _deviceCard(RdDevice d) {
     final last = d.lastConnected == 0
-        ? translate('Never connected')
+        ? '从未连接'
         : DateTime.fromMillisecondsSinceEpoch(d.lastConnected)
             .toString()
             .substring(0, 16);
@@ -180,7 +179,7 @@ class RdDevicesPageState extends State<RdDevicesPage> {
       child: InkWell(
         onTap: () => _connect(d),
         child: Padding(
-          padding: EdgeInsets.all(14),
+          padding: EdgeInsets.fromLTRB(14, 12, 8, 12),
           child: Row(
             children: [
               Icon(
@@ -188,21 +187,22 @@ class RdDevicesPageState extends State<RdDevicesPage> {
                 size: 36,
                 color: MyTheme.accent,
               ),
-              SizedBox(width: 14),
+              SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        Expanded(
+                        Flexible(
                           child: Text(d.name,
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600)),
                         ),
-                        SizedBox(width: 8),
+                        SizedBox(width: 6),
                         _statusChip(d),
                       ],
                     ),
@@ -211,26 +211,28 @@ class RdDevicesPageState extends State<RdDevicesPage> {
                         style:
                             TextStyle(fontSize: 12, color: MyTheme.darkGray)),
                     SizedBox(height: 2),
-                    Text('${translate('Last connected')}: $last',
+                    Text('最近连接：$last',
                         style:
                             TextStyle(fontSize: 12, color: MyTheme.darkGray)),
                   ],
                 ),
               ),
+              SizedBox(width: 6),
+              FilledButton(
+                onPressed: () => _connect(d),
+                child: Text('连接'),
+              ),
               PopupMenuButton<String>(
+                padding: EdgeInsets.zero,
+                icon: Icon(Icons.more_vert, size: 20),
                 onSelected: (v) {
                   if (v == 'edit') _edit(d);
                   if (v == 'delete') _confirmDelete(d);
                 },
                 itemBuilder: (ctx) => [
-                  PopupMenuItem(value: 'edit', child: Text(translate('Edit'))),
-                  PopupMenuItem(
-                      value: 'delete', child: Text(translate('Remove device'))),
+                  PopupMenuItem(value: 'edit', child: Text('编辑')),
+                  PopupMenuItem(value: 'delete', child: Text('删除设备')),
                 ],
-              ),
-              FilledButton(
-                onPressed: () => _connect(d),
-                child: Text(translate('Connect')),
               ),
             ],
           ),
@@ -309,50 +311,45 @@ class _DeviceDialogState extends State<_DeviceDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.existing == null
-          ? translate('Add device')
-          : translate('Edit')),
+      title: Text(widget.existing == null ? '添加设备' : '编辑设备'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: _name,
-              decoration: InputDecoration(labelText: translate('Device name')),
+              decoration: InputDecoration(labelText: '设备名称'),
             ),
             TextField(
               controller: _id,
               keyboardType: TextInputType.number,
-              decoration: InputDecoration(labelText: translate('Remote ID')),
+              decoration: InputDecoration(labelText: '远程 ID'),
             ),
             TextField(
               controller: _server,
-              decoration:
-                  InputDecoration(labelText: translate('ID server')),
+              decoration: InputDecoration(labelText: 'ID 服务器'),
             ),
             TextField(
               controller: _relay,
-              decoration: InputDecoration(labelText: 'Relay server'),
+              decoration: InputDecoration(labelText: '中继服务器'),
             ),
             TextField(
               controller: _key,
-              decoration: InputDecoration(labelText: 'Server public key'),
+              decoration: InputDecoration(labelText: '服务器公钥'),
             ),
             TextField(
               controller: _password,
               obscureText: true,
               decoration: InputDecoration(
-                  labelText: translate('Password'),
-                  helperText: translate('Leave empty to be asked on connect')),
+                  labelText: '访问密码',
+                  helperText: '留空则连接时询问'),
             ),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
               value: _savePassword,
               onChanged: (v) => setState(() => _savePassword = v ?? false),
-              title: Text(translate('Save password on this device'),
-                  style: TextStyle(fontSize: 13)),
-              subtitle: Text(
-                  translate('Stored encrypted with the Android Keystore'),
+              title: Text('在本机保存密码', style: TextStyle(fontSize: 13)),
+              subtitle: Text('使用 Android Keystore 加密存储',
                   style: TextStyle(fontSize: 11)),
             ),
           ],
@@ -360,9 +357,8 @@ class _DeviceDialogState extends State<_DeviceDialog> {
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(translate('Cancel'))),
-        TextButton(onPressed: _submit, child: Text(translate('OK'))),
+            onPressed: () => Navigator.of(context).pop(), child: Text('取消')),
+        TextButton(onPressed: _submit, child: Text('保存')),
       ],
     );
   }

@@ -154,7 +154,9 @@ class HomePageState extends State<HomePage> {
         ],
       );
     }
-    return Text(bind.mainGetAppNameSync());
+    // RemoteDesk branding: keep upstream app name untouched in config paths,
+    // only the visible title is ours.
+    return Text('RemoteDesk');
   }
 }
 
