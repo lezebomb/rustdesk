@@ -175,9 +175,10 @@ jobs:
           # installed over the previous APK. Without it Android refuses with
           # INSTALL_FAILED_UPDATE_INCOMPATIBLE and the device list is wiped.
           if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > ./flutter/android/remotedesk-release.jks
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > ./flutter/android/app/remotedesk-release.jks
             printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=remotedesk-release.jks\n' "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" "${{ secrets.ANDROID_KEY_PASSWORD }}" "${{ secrets.ANDROID_KEY_ALIAS }}" > ./flutter/android/key.properties
-            echo "using stable release keystore"
+            # storeFile is resolved by app/build.gradle relative to the app module dir
+            echo "using stable release keystore (app/remotedesk-release.jks)"
           else
             sed -i "s/signingConfigs.release/signingConfigs.debug/g" ./flutter/android/app/build.gradle
             echo "no keystore secret; falling back to debug signing"
