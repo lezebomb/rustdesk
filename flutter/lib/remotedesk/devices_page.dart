@@ -170,7 +170,7 @@ class RdDevicesPageState extends State<RdDevicesPage> {
 
   Widget _deviceCard(RdDevice d) {
     final last = d.lastConnected == 0
-        ? '从未连接'
+        ? '从未尝试'
         : DateTime.fromMillisecondsSinceEpoch(d.lastConnected)
             .toString()
             .substring(0, 16);
@@ -192,26 +192,25 @@ class RdDevicesPageState extends State<RdDevicesPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // The name gets the full row width: putting the status chip
+                    // beside it squeezed long Chinese device names into "拯救…".
+                    Text(d.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w600)),
+                    SizedBox(height: 4),
                     Row(
                       children: [
-                        Flexible(
-                          child: Text(d.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600)),
-                        ),
-                        SizedBox(width: 6),
+                        Text('ID: ${formatID(d.id)}',
+                            style: TextStyle(
+                                fontSize: 12, color: MyTheme.darkGray)),
+                        SizedBox(width: 8),
                         _statusChip(d),
                       ],
                     ),
-                    SizedBox(height: 4),
-                    Text('ID: ${formatID(d.id)}',
-                        style:
-                            TextStyle(fontSize: 12, color: MyTheme.darkGray)),
                     SizedBox(height: 2),
-                    Text('最近连接：$last',
+                    Text('最近尝试：$last',
                         style:
                             TextStyle(fontSize: 12, color: MyTheme.darkGray)),
                   ],
