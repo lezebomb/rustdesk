@@ -65,8 +65,8 @@ jobs:
       fail-fast: false
       matrix:
         job:
-          - { arch: aarch64, target: aarch64-linux-android, abi: arm64-v8a, script: ./flutter/ndk_arm64.sh, tp: android-arm64 }
-          - { arch: x86_64, target: x86_64-linux-android, abi: x86_64, script: ./flutter/ndk_x64.sh, tp: android-x64 }
+          - { arch: aarch64, target: aarch64-linux-android, abi: arm64-v8a, script: bash ./flutter/ndk_arm64.sh, tp: android-arm64 }
+          - { arch: x86_64, target: x86_64-linux-android, abi: x86_64, script: bash ./flutter/ndk_x64.sh, tp: android-x64 }
     steps:
       - name: Free disk space
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
@@ -128,7 +128,7 @@ jobs:
             aarch64-linux-android) ANDROID_TARGET=arm64-v8a ;;
             x86_64-linux-android) ANDROID_TARGET=x86_64 ;;
           esac
-          if ! ./flutter/build_android_deps.sh "${ANDROID_TARGET}"; then
+          if ! bash ./flutter/build_android_deps.sh "${ANDROID_TARGET}"; then
             find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
               echo "$_1:"; echo "======"; cat "$_1"; echo "======"; echo ""
             done
