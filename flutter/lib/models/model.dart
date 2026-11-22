@@ -122,6 +122,8 @@ class FfiModel with ChangeNotifier {
   Timer? _restartReconnectDelayTimer;
   var _reconnects = 1;
   DateTime? _offlineReconnectStartTime;
+  // RemoteDesk: start time of the local-network-loss auto-retry window.
+  DateTime? _netLossReconnectStartTime;
   bool _androidDocumentPickerActive = false;
   bool _androidDocumentPickerInterruptedConnection = false;
   bool _viewOnly = false;
@@ -970,7 +972,8 @@ class FfiModel with ChangeNotifier {
     } else {
       var hasRetry = evt['hasRetry'] == 'true';
       if (!hasRetry) {
-        hasRetry = shouldAutoRetryOnOffline(type, title, text);
+        hasRetry = shouldAutoRetryOnOffline(type, title, text) ||
+            shouldAutoRetryOnNetworkLoss(type, title, text);
       }
       showMsgBox(sessionId, type, title, text, link, hasRetry, dialogManager);
     }
@@ -1028,6 +1031,33 @@ class FfiModel with ChangeNotifier {
       }
     }
     return false;
+  }
+
+  /// RemoteDesk: auto-retry when the local side loses connectivity.
+  ///
+  /// Upstream only auto-retries `Remote desktop is offline` (the controlled
+  /// side went away). When the *controlling* device loses its network
+  /// (Wi-Fi -> mobile handover, campus network hiccup, sleeping tablet) the
+  /// session dies with `Failed to connect to <rendezvous>:21116: Please try
+  /// later` or `Connection reset by peer`, and upstream shows a blocking dialog
+  /// that needs a manual tap. For an unattended one-tap product that is the
+  /// wrong behaviour, so keep retrying inside a bounded window instead.
+  bool shouldAutoRetryOnNetworkLoss(String type, String title, String text) {
+    if (type != 'error' || title != 'Connection Error') return false;
+    final t = text.toLowerCase();
+    final isNetworkLoss = t.contains('failed to connect to') ||
+        t.contains('connection reset') ||
+        t.contains('os error 104') ||
+        t.contains('os error 101') ||
+        t.contains('network is unreachable') ||
+        t.contains('please try later') ||
+        t.contains('timed out');
+    if (!isNetworkLoss) return false;
+    final now = DateTime.now();
+    _netLossReconnectStartTime ??= now;
+    // 5 minutes: enough for a real handover or a captive-portal login, short
+    // enough that a genuinely dead peer stops burning battery.
+    return now.difference(_netLossReconnectStartTime!).inSeconds < 300;
   }
 
   handleToast(Map<String, dynamic> evt, SessionID sessionId, String peerId) {
@@ -1100,6 +1130,7 @@ class FfiModel with ChangeNotifier {
     } else {
       _reconnects = 1;
       _offlineReconnectStartTime = null;
+      _netLossReconnectStartTime = null;
     }
   }
 
@@ -1454,6 +1485,7 @@ class FfiModel with ChangeNotifier {
       if (displays.isNotEmpty) {
         _reconnects = 1;
         _offlineReconnectStartTime = null;
+        _netLossReconnectStartTime = null;
         resetRestartReconnectState();
         waitForFirstImage.value = true;
         isRefreshing = false;
