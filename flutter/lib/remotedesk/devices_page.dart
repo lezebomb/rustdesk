@@ -77,7 +77,7 @@ class RdDevicesPageState extends State<RdDevicesPage> {
     }
   }
 
-  Future<void> _connect(RdDevice device) async {
+  Future<void> _connect(RdDevice device, {bool forceRelay = false}) async {
     // Apply this device's server settings first so the connection goes through
     // the server it was paired with.
     await _applyServer(device);
@@ -85,7 +85,7 @@ class RdDevicesPageState extends State<RdDevicesPage> {
     if (!mounted) return;
     await _store.touch(device.id);
     if (!mounted) return;
-    connect(context, device.id, password: password);
+    connect(context, device.id, password: password, forceRelay: forceRelay);
   }
 
   Future<void> _confirmDelete(RdDevice device) async {
@@ -251,10 +251,12 @@ class RdDevicesPageState extends State<RdDevicesPage> {
                 padding: EdgeInsets.zero,
                 icon: Icon(Icons.more_vert, size: 20),
                 onSelected: (v) {
+                  if (v == 'relay') _connect(d, forceRelay: true);
                   if (v == 'edit') _edit(d);
                   if (v == 'delete') _confirmDelete(d);
                 },
                 itemBuilder: (ctx) => [
+                  PopupMenuItem(value: 'relay', child: Text('强制中继连接')),
                   PopupMenuItem(value: 'edit', child: Text('编辑')),
                   PopupMenuItem(value: 'delete', child: Text('删除设备')),
                 ],
