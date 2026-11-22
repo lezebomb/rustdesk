@@ -26,7 +26,7 @@ class RdBiometric {
   static Future<String> canAuthenticate() async {
     try {
       final kind = await _channel.invokeMethod<String>('canAuthenticate');
-      if (kind == kindBiometric || kind == kindCredential) return kind;
+      if (kind == kindBiometric || kind == kindCredential) return kind!;
       return kindNone;
     } on PlatformException catch (e) {
       debugPrintBiometric('canAuthenticate failed: ${e.code}');
