@@ -23,6 +23,7 @@ import '../../models/model.dart';
 import '../../models/platform_model.dart';
 import '../../models/shortcut_model.dart';
 import '../../remotedesk/privacy_shield.dart';
+import '../../remotedesk/resolution_presets.dart';
 import '../../remotedesk/unlock.dart';
 import '../../utils/image.dart';
 import '../widgets/dialog.dart';
@@ -108,6 +109,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   Worker? _waylandKeyboardGateWorker;
   bool _waylandKeyboardGateInitialized = false;
+
+  // RemoteDesk 分辨率预设：等对端信息到达后再落地（见 _applyResolutionPreset）。
+  Worker? _resolutionPresetWorker;
 
   // RemoteDesk 本地防窥屏：只遮挡手机这一侧的远程画面。
   // `_shielded` 是用户主动遮挡（按钮/手势），`_backgroundMasked` 是
@@ -196,6 +200,32 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     if (gFFI.ffiModel.pi.isSet.value) {
       _initWaylandKeyboardGateIfNeeded();
     }
+
+    // RemoteDesk 分辨率预设：本地缩放要写当前会话的 Flutter option，画质要发给
+    // 被控端，两者都需要活着的 session，所以等对端信息到达后再落地。
+    _resolutionPresetWorker = ever(gFFI.ffiModel.pi.isSet, (bool isSet) {
+      if (isSet) {
+        unawaited(_applyResolutionPreset());
+      }
+    });
+    if (gFFI.ffiModel.pi.isSet.value) {
+      unawaited(_applyResolutionPreset());
+    }
+  }
+
+  /// 应用设备页选定的分辨率预设。
+  ///
+  /// 档位按 peer id 取，被控会话（别人连进来）不会命中；重复应用同一档位没有
+  /// 副作用，所以重连时再跑一次是安全的。
+  Future<void> _applyResolutionPreset() async {
+    final preset = RdPendingResolutionPreset.forPeer(widget.id);
+    if (preset == null) return;
+    try {
+      await applyRdResolutionPreset(sessionId: gFFI.sessionId, preset: preset);
+      await gFFI.canvasModel.updateViewStyle();
+    } catch (e) {
+      debugPrint('[RemoteDesk] 分辨率预设应用失败: $e');
+    }
   }
 
   @override
@@ -221,6 +251,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     _physicalFocusNode.dispose();
     clearWaylandKeyboardPromptSuppressedForConnection(sessionId.toString());
     _waylandKeyboardGateWorker?.dispose();
+    _resolutionPresetWorker?.dispose();
     inputModel.keyboardInputAllowed = true;
     // RemoteDesk: 退出会话必须撤掉 FLAG_SECURE，否则回到主页后也截不了图。
     unawaited(RdPrivacyShieldSettings.instance.releaseScreenshotBlock());

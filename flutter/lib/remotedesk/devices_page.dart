@@ -7,6 +7,7 @@ import 'package:flutter_hbb/mobile/pages/home_page.dart';
 import 'package:flutter_hbb/remotedesk/device_store.dart';
 import 'package:flutter_hbb/remotedesk/direct_addr.dart';
 import 'package:flutter_hbb/remotedesk/privacy_shield.dart';
+import 'package:flutter_hbb/remotedesk/resolution_presets.dart';
 import 'package:flutter_hbb/remotedesk/secure_store.dart';
 import 'package:flutter_hbb/remotedesk/win_password.dart';
 
@@ -104,6 +105,13 @@ class RdDevicesPageState extends State<RdDevicesPage> {
     // Apply this device's server settings first so the connection goes through
     // the server it was paired with.
     await _applyServer(device);
+    // 分辨率预设：画质档位能写进默认选项（连接前唯一的杠杆），本地渲染缩放要
+    // 写当前会话的 Flutter option，只能等 RemotePage 拿到对端信息后落地，所以
+    // 这里把档位挂到 pending 上，由 RemotePage 按 peer id 取用。
+    final preset = rdResolutionPresetById(device.resolutionPreset);
+    await applyRdResolutionPresetDefaults(preset);
+    RdPendingResolutionPreset.set(
+        device.directAddr.isEmpty ? device.id : device.directAddr, preset);
     final password = await SecureStore.get(_pwKey(device.id));
     if (!mounted) return;
     await _store.touch(device.id);
@@ -297,6 +305,8 @@ class RdDevicesPageState extends State<RdDevicesPage> {
                               color: MyTheme.accent)),
                     ],
                     SizedBox(height: 2),
+                    Text('画质：${rdResolutionPresetLabel(d.resolutionPreset)}',
+                        style: TextStyle(fontSize: 12, color: MyTheme.darkGray)),
                     Text('最近尝试：$last',
                         style:
                             TextStyle(fontSize: 12, color: MyTheme.darkGray)),
@@ -369,6 +379,7 @@ class _DeviceDialogState extends State<_DeviceDialog> {
   bool _saveWinPassword = false;
   String? _directErr;
   String? _winErr;
+  String _resolutionPreset = 'original';
 
   @override
   void initState() {
@@ -387,6 +398,7 @@ class _DeviceDialogState extends State<_DeviceDialog> {
     // the fact that one exists.
     _winPassword = TextEditingController();
     _saveWinPassword = e?.winPasswordRef ?? false;
+    _resolutionPreset = e?.resolutionPreset ?? 'original';
   }
 
   @override
@@ -435,6 +447,7 @@ class _DeviceDialogState extends State<_DeviceDialog> {
       relayServer: _relay.text.trim(),
       key: _key.text.trim(),
       directAddr: direct.value,
+      resolutionPreset: _resolutionPreset,
       winPasswordRef: _saveWinPassword,
       lastConnected: widget.existing?.lastConnected ?? 0,
       createdAt: widget.existing?.createdAt ?? 0,
@@ -490,6 +503,28 @@ class _DeviceDialogState extends State<_DeviceDialog> {
               decoration: InputDecoration(
                   labelText: '访问密码',
                   helperText: '留空则连接时询问'),
+            ),
+            // RemoteDesk 分辨率预设：只决定手机这一侧的渲染缩放和被控端画质
+            // 档位；连接前无法请求任意像素尺寸（见 docs/20-resolution-presets.md）。
+            DropdownButtonFormField<String>(
+              value: _resolutionPreset,
+              isExpanded: true,
+              decoration: InputDecoration(labelText: '分辨率预设'),
+              items: [
+                for (final p in kRdResolutionPresets)
+                  DropdownMenuItem<String>(
+                    value: p.id,
+                    child: Text('${p.label} ${p.pixelLabel}',
+                        style: TextStyle(fontSize: 13)),
+                  ),
+              ],
+              onChanged: (v) =>
+                  setState(() => _resolutionPreset = v ?? 'original'),
+            ),
+            Padding(
+              padding: EdgeInsets.only(top: 2, bottom: 6),
+              child: Text(rdResolutionPresetById(_resolutionPreset).description,
+                  style: TextStyle(fontSize: 11, color: MyTheme.darkGray)),
             ),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,

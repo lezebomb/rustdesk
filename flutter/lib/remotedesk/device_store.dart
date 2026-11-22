@@ -26,6 +26,10 @@ class RdDevice {
   /// Only this flag lives in the device list; the password itself never does.
   bool winPasswordRef;
 
+  /// 分辨率预设 id，见 `remotedesk/resolution_presets.dart`。旧设备数据里没有
+  /// 这个键，读回时按 `original`（原画）处理。
+  String resolutionPreset;
+
   int lastConnected;
   int createdAt;
 
@@ -37,6 +41,7 @@ class RdDevice {
     this.relayServer = '',
     this.key = '',
     this.directAddr = '',
+    this.resolutionPreset = 'original',
     this.winPasswordRef = false,
     this.lastConnected = 0,
     this.createdAt = 0,
@@ -50,6 +55,7 @@ class RdDevice {
         'relayServer': relayServer,
         'key': key,
         'directAddr': directAddr,
+        'resolutionPreset': resolutionPreset,
         'winPasswordRef': winPasswordRef,
         'lastConnected': lastConnected,
         'createdAt': createdAt,
@@ -64,6 +70,8 @@ class RdDevice {
         key: (m['key'] ?? '').toString(),
         // Devices saved before M2 have no such key; they keep working by ID.
         directAddr: (m['directAddr'] ?? '').toString(),
+        // 旧设备文件没有这个键：按原画（不缩放）读回。
+        resolutionPreset: (m['resolutionPreset'] ?? 'original').toString(),
         // Older files have no flag at all: no saved logon password then.
         winPasswordRef: m['winPasswordRef'] == true,
         lastConnected: (m['lastConnected'] as num?)?.toInt() ?? 0,
