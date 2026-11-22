@@ -100,6 +100,33 @@ class MainActivity : FlutterActivity() {
                 result.notImplemented()
             }
         }
+        // RemoteDesk: local privacy shield. FLAG_SECURE hides the remote canvas
+        // from screenshots, screen recording and the recents thumbnail; only the
+        // controller side is affected, the peer is untouched.
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "remotedesk/privacy"
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setSecure" -> {
+                    val enable = call.argument<Boolean>("enable") == true
+                    runOnUiThread {
+                        if (enable) {
+                            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        } else {
+                            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        }
+                    }
+                    result.success(true)
+                }
+
+                "isSecure" -> result.success(
+                    (window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0
+                )
+
+                else -> result.notImplemented()
+            }
+        }
         thread {
             try {
                 setCodecInfo()

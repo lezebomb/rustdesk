@@ -4,6 +4,7 @@ import 'package:flutter_hbb/common/formatter/id_formatter.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/mobile/pages/home_page.dart';
 import 'package:flutter_hbb/remotedesk/device_store.dart';
+import 'package:flutter_hbb/remotedesk/privacy_shield.dart';
 import 'package:flutter_hbb/remotedesk/secure_store.dart';
 
 /// Password storage key for one device. The value itself never leaves the
@@ -19,7 +20,12 @@ class RdDevicesPage extends StatefulWidget implements PageShape {
   @override
   final List<Widget> appBarActions;
 
-  RdDevicesPage({Key? key, this.appBarActions = const []}) : super(key: key);
+  RdDevicesPage({
+    Key? key,
+    // RemoteDesk: 防窥屏开关挂在设备页 AppBar 上；home_page 不传 actions 时
+    // 也能拿到入口，不需要改上游的 home_page。
+    this.appBarActions = const [RdPrivacyShieldSettingsButton()],
+  }) : super(key: key);
 
   @override
   State<RdDevicesPage> createState() => RdDevicesPageState();

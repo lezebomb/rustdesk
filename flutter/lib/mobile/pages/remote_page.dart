@@ -22,6 +22,7 @@ import '../../models/input_model.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
 import '../../models/shortcut_model.dart';
+import '../../remotedesk/privacy_shield.dart';
 import '../../utils/image.dart';
 import '../widgets/dialog.dart';
 import '../widgets/custom_scale_widget.dart';
@@ -107,6 +108,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Worker? _waylandKeyboardGateWorker;
   bool _waylandKeyboardGateInitialized = false;
 
+  // RemoteDesk 本地防窥屏：只遮挡手机这一侧的远程画面。
+  // `_shielded` 是用户主动遮挡（按钮/手势），`_backgroundMasked` 是
+  // App 进入后台或任务列表时的临时遮挡。
+  bool _shielded = false;
+  bool _backgroundMasked = false;
+
   InputModel get inputModel => gFFI.inputModel;
   SessionID get sessionId => gFFI.sessionId;
 
@@ -171,6 +178,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
     inputModel.keyboardInputAllowed = true;
 
+    // RemoteDesk: 防窥屏设置只在会话开始时读一次，避免每帧碰 local option。
+    final shieldSettings = RdPrivacyShieldSettings.instance..load();
+    _shielded = shieldSettings.defaultBlur;
+    if (_shielded) inputModel.keyboardInputAllowed = false;
+    unawaited(shieldSettings.applyScreenshotBlock());
+
     // Wayland sessions may use clipboard-based text input on the controlled side.
     // Require explicit user confirmation before allowing soft-keyboard and
     // clipboard-assisted text input. Physical keyboard events are not gated here.
@@ -208,6 +221,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     clearWaylandKeyboardPromptSuppressedForConnection(sessionId.toString());
     _waylandKeyboardGateWorker?.dispose();
     inputModel.keyboardInputAllowed = true;
+    // RemoteDesk: 退出会话必须撤掉 FLAG_SECURE，否则回到主页后也截不了图。
+    unawaited(RdPrivacyShieldSettings.instance.releaseScreenshotBlock());
     await gFFI.close();
     _timer?.cancel();
     _iosKeyboardWorkaroundTimer?.cancel();
@@ -227,6 +242,18 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       trySyncClipboard();
+      // RemoteDesk: 回到前台先撤掉后台遮罩，用户手动遮挡的状态保留。
+      if (_backgroundMasked && mounted) {
+        setState(() => _backgroundMasked = false);
+      }
+      return;
+    }
+    // RemoteDesk 本地防窥屏：inactive / paused / hidden 都立刻盖住画面，
+    // 这样切后台的瞬间和任务列表缩略图都看不到远程内容。
+    if (RdPrivacyShieldSettings.instance.onBackground &&
+        !_backgroundMasked &&
+        mounted) {
+      setState(() => _backgroundMasked = true);
     }
   }
 
@@ -546,47 +573,100 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 ],
               )),
           body: Obx(
-            () => getRawPointerAndKeyBody(Overlay(
-              initialEntries: [
-                OverlayEntry(builder: (context) {
-                  return Container(
-                    color: kColorCanvas,
-                    child: isWebDesktop
-                        ? getBodyForDesktopWithListener()
-                        : SafeArea(
-                            child:
-                                OrientationBuilder(builder: (ctx, orientation) {
-                              if (_currentOrientation != orientation) {
-                                Timer(const Duration(milliseconds: 200), () {
-                                  gFFI.dialogManager
-                                      .resetMobileActionsOverlay(ffi: gFFI);
-                                  _currentOrientation = orientation;
-                                  gFFI.canvasModel.updateViewStyle();
-                                });
-                              }
-                              return Container(
-                                color: MyTheme.canvasColor,
-                                child: inputModel.isPhysicalMouse.value
-                                    ? getBodyForMobile()
-                                    : RawTouchGestureDetectorRegion(
-                                        child: getBodyForMobile(),
-                                        ffi: gFFI,
-                                      ),
-                              );
-                            }),
-                          ),
-                  );
-                })
-              ],
+            () => getRawPointerAndKeyBody(RdPrivacyShieldSwipeDetector(
+              onTrigger: _toggleShield,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Overlay(
+                    initialEntries: [
+                      OverlayEntry(builder: (context) {
+                        return Container(
+                          color: kColorCanvas,
+                          child: isWebDesktop
+                              ? getBodyForDesktopWithListener()
+                              : SafeArea(
+                                  child: OrientationBuilder(
+                                      builder: (ctx, orientation) {
+                                    if (_currentOrientation != orientation) {
+                                      Timer(const Duration(milliseconds: 200),
+                                          () {
+                                        gFFI.dialogManager
+                                            .resetMobileActionsOverlay(
+                                                ffi: gFFI);
+                                        _currentOrientation = orientation;
+                                        gFFI.canvasModel.updateViewStyle();
+                                      });
+                                    }
+                                    return Container(
+                                      color: MyTheme.canvasColor,
+                                      child: inputModel.isPhysicalMouse.value
+                                          ? getBodyForMobile()
+                                          : RawTouchGestureDetectorRegion(
+                                              child: getBodyForMobile(),
+                                              ffi: gFFI,
+                                            ),
+                                    );
+                                  }),
+                                ),
+                        );
+                      })
+                    ],
+                  ),
+                  // RemoteDesk 本地防窥屏：遮挡层盖在远程画面之上，自己吃掉
+                  // 点击，因此画面下面的输入注入链收不到事件。
+                  if (_shielded || _backgroundMasked)
+                    Positioned.fill(
+                      child: RdPrivacyShieldCover(
+                        showHint: _shielded,
+                        onTap: _shielded ? _toggleShield : null,
+                      ),
+                    ),
+                ],
+              ),
             )),
           )),
     );
   }
 
-  bool _handleLocalKeyEvent(KeyEvent event) => handleMobileLocalKeyEvent(event,
-      remoteFocused: _physicalFocusNode.hasPrimaryFocus, inputModel: inputModel);
+  bool _handleLocalKeyEvent(KeyEvent event) =>
+      _inputPaused
+          ? false
+          : handleMobileLocalKeyEvent(event,
+              remoteFocused: _physicalFocusNode.hasPrimaryFocus,
+              inputModel: inputModel);
+
+  /// 遮挡期间暂停向被控端转发输入。
+  bool get _inputPaused => _shielded;
+
+  /// 一键遮挡：切换画面遮罩，同时暂停/恢复输入转发。
+  void _toggleShield() {
+    if (!mounted) return;
+    final next = !_shielded;
+    setState(() {
+      _shielded = next;
+      if (next) _showEdit = false;
+    });
+    if (next) {
+      // 暂停输入：键盘焦点域在 getRawPointerAndKeyBody() 里被拿掉，
+      // 软键盘转发开关关掉，本机焦点收起，避免误操作打到被控端。
+      inputModel.keyboardInputAllowed = false;
+      _physicalFocusNode.unfocus();
+      _mobileFocusNode.unfocus();
+      _disableAndroidSoftKeyboard();
+    } else {
+      inputModel.keyboardInputAllowed = true;
+      // 恢复键盘焦点，物理键盘重新转发给被控端。
+      _physicalFocusNode.requestFocus();
+    }
+  }
 
   Widget getRawPointerAndKeyBody(Widget child) {
+    // RemoteDesk 本地防窥屏：遮挡时断开指针/键盘注入链，事件不会到达被控端。
+    // 指针事件另外还有一层结构保证：遮挡层是不透点击的兄弟节点。
+    if (_inputPaused) {
+      return child;
+    }
     final ffiModel = Provider.of<FfiModel>(context);
     return RawPointerMouseRegion(
       cursor: ffiModel.keyboard ? SystemMouseCursors.none : MouseCursor.defer,
@@ -678,6 +758,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                   ))
                         ]) +
                   [
+                    // RemoteDesk 本地防窥屏：一键遮挡/恢复（只挡手机这一侧）。
+                    IconButton(
+                      color: Colors.white,
+                      icon: Icon(_shielded
+                          ? Icons.visibility_off_rounded
+                          : Icons.visibility_rounded),
+                      tooltip: _shielded ? '取消遮挡' : '遮挡画面',
+                      onPressed: _toggleShield,
+                    ),
                     IconButton(
                       color: Colors.white,
                       icon: Icon(Icons.more_vert),
