@@ -32,7 +32,7 @@ class RdDevicesPageState extends State<RdDevicesPage> {
   void initState() {
     super.initState();
     _store.addListener(_onStoreChanged);
-    _store.load();
+    _store.load().then((_) => _applyPrimaryServer());
   }
 
   @override
@@ -45,20 +45,44 @@ class RdDevicesPageState extends State<RdDevicesPage> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _connect(RdDevice device) async {
-    // Apply this device's server settings first so the connection goes through
-    // the server it was paired with.
+  /// Writes the server settings into the *global* option store. The rendezvous
+  /// client reads these keys from the global config (RustDesk2.toml [options]),
+  /// so local options would not affect which server the app registers with.
+  Future<void> _applyServer(RdDevice device) async {
     if (device.server.isNotEmpty) {
-      await bind.mainSetLocalOption(
+      await bind.mainSetOption(
           key: 'custom-rendezvous-server', value: device.server);
     }
     if (device.relayServer.isNotEmpty) {
-      await bind.mainSetLocalOption(
+      await bind.mainSetOption(
           key: 'relay-server', value: device.relayServer);
     }
     if (device.key.isNotEmpty) {
-      await bind.mainSetLocalOption(key: 'key', value: device.key);
+      await bind.mainSetOption(key: 'key', value: device.key);
     }
+  }
+
+  /// Applies the most recently used device's server at startup so the client
+  /// registers with the paired server before the user taps anything.
+  Future<void> _applyPrimaryServer() async {
+    if (_store.devices.isEmpty) return;
+    final sorted = [..._store.devices]..sort((a, b) {
+        final av = a.lastConnected ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bv = b.lastConnected ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return bv.compareTo(av);
+      });
+    final primary = sorted.first;
+    if (primary.server.isEmpty) return;
+    final current = bind.mainGetOptionSync(key: 'custom-rendezvous-server');
+    if (current != primary.server) {
+      await _applyServer(primary);
+    }
+  }
+
+  Future<void> _connect(RdDevice device) async {
+    // Apply this device's server settings first so the connection goes through
+    // the server it was paired with.
+    await _applyServer(device);
     final password = await SecureStore.get(_pwKey(device.id));
     if (!mounted) return;
     await _store.touch(device.id);
@@ -272,10 +296,10 @@ class _DeviceDialogState extends State<_DeviceDialog> {
     _name = TextEditingController(text: e?.name ?? '');
     _id = TextEditingController(text: e?.id ?? '');
     _server = TextEditingController(
-        text: e?.server ?? bind.mainGetLocalOption(key: 'custom-rendezvous-server'));
+        text: e?.server ?? bind.mainGetOptionSync(key: 'custom-rendezvous-server'));
     _relay =
-        TextEditingController(text: e?.relayServer ?? bind.mainGetLocalOption(key: 'relay-server'));
-    _key = TextEditingController(text: e?.key ?? bind.mainGetLocalOption(key: 'key'));
+        TextEditingController(text: e?.relayServer ?? bind.mainGetOptionSync(key: 'relay-server'));
+    _key = TextEditingController(text: e?.key ?? bind.mainGetOptionSync(key: 'key'));
     _password = TextEditingController();
   }
 
