@@ -127,6 +127,17 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        // RemoteDesk: local verification (fingerprint / device credential) in
+        // front of the saved Windows logon password. Framework APIs only, no
+        // androidx.biometric dependency.
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "remotedesk/biometric"
+        ).setMethodCallHandler { call, result ->
+            if (!RdBiometric.handle(this, call, result)) {
+                result.notImplemented()
+            }
+        }
         thread {
             try {
                 setCodecInfo()
@@ -166,6 +177,7 @@ class MainActivity : FlutterActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (documentPicker.onResult(requestCode, resultCode, data)) return
+        if (RdBiometric.onActivityResult(requestCode, resultCode)) return
         if (requestCode == REQ_IMPORT_FILES) {
             val pending = pendingPicker as? PendingPicker.ImportFiles ?: return
             pendingPicker = null

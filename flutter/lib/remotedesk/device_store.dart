@@ -20,6 +20,12 @@ class RdDevice {
   /// Empty means "connect by [id] through the rendezvous server".
   String directAddr;
 
+  /// Whether the Windows logon password of this computer is stored in the
+  /// Android Keystore (key `rd_winpw_<id>`, see [RdWinPassword]).
+  ///
+  /// Only this flag lives in the device list; the password itself never does.
+  bool winPasswordRef;
+
   int lastConnected;
   int createdAt;
 
@@ -31,6 +37,7 @@ class RdDevice {
     this.relayServer = '',
     this.key = '',
     this.directAddr = '',
+    this.winPasswordRef = false,
     this.lastConnected = 0,
     this.createdAt = 0,
   });
@@ -43,6 +50,7 @@ class RdDevice {
         'relayServer': relayServer,
         'key': key,
         'directAddr': directAddr,
+        'winPasswordRef': winPasswordRef,
         'lastConnected': lastConnected,
         'createdAt': createdAt,
       };
@@ -56,6 +64,8 @@ class RdDevice {
         key: (m['key'] ?? '').toString(),
         // Devices saved before M2 have no such key; they keep working by ID.
         directAddr: (m['directAddr'] ?? '').toString(),
+        // Older files have no flag at all: no saved logon password then.
+        winPasswordRef: m['winPasswordRef'] == true,
         lastConnected: (m['lastConnected'] as num?)?.toInt() ?? 0,
         createdAt: (m['createdAt'] as num?)?.toInt() ?? 0,
       );

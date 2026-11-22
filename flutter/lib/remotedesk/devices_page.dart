@@ -8,6 +8,7 @@ import 'package:flutter_hbb/remotedesk/device_store.dart';
 import 'package:flutter_hbb/remotedesk/direct_addr.dart';
 import 'package:flutter_hbb/remotedesk/privacy_shield.dart';
 import 'package:flutter_hbb/remotedesk/secure_store.dart';
+import 'package:flutter_hbb/remotedesk/win_password.dart';
 
 /// Password storage key for one device. The value itself never leaves the
 /// Keystore-backed store.
@@ -144,6 +145,7 @@ class RdDevicesPageState extends State<RdDevicesPage> {
     );
     if (ok != true) return;
     await SecureStore.delete(_pwKey(device.id));
+    await RdWinPassword.delete(device.id);
     await _store.remove(device.id);
   }
 
@@ -153,6 +155,15 @@ class RdDevicesPageState extends State<RdDevicesPage> {
       builder: (ctx) => _DeviceDialog(existing: existing),
     );
     if (draft == null) return;
+    // The Keystore entry is written first: the flag on the device has to
+    // describe what is really stored, so a failed write cannot claim a
+    // password that is not there.
+    if (draft.winPassword.isNotEmpty) {
+      await RdWinPassword.save(draft.device.id, draft.winPassword);
+    } else if (!draft.saveWinPassword) {
+      await RdWinPassword.delete(draft.device.id);
+    }
+    draft.device.winPasswordRef = await RdWinPassword.has(draft.device.id);
     await _store.addOrUpdate(draft.device);
     await persistDevicePassword(
         draft.device.id, draft.password, draft.savePassword);
@@ -324,10 +335,17 @@ class _DeviceDraft {
   final String password;
   final bool savePassword;
 
+  /// Windows logon password typed in this dialog; empty when left untouched.
+  final String winPassword;
+
+  /// Whether the logon password should exist in the Keystore after this edit.
+  final bool saveWinPassword;
+
   /// Set when the direct address was rewritten before saving, so the page can
   /// tell the user what was stored.
   final String? addrFix;
-  _DeviceDraft(this.device, this.password, this.savePassword, {this.addrFix});
+  _DeviceDraft(this.device, this.password, this.savePassword,
+      {this.addrFix, this.winPassword = '', this.saveWinPassword = false});
 }
 
 class _DeviceDialog extends StatefulWidget {
@@ -346,8 +364,11 @@ class _DeviceDialogState extends State<_DeviceDialog> {
   late final TextEditingController _relay;
   late final TextEditingController _key;
   late final TextEditingController _password;
+  late final TextEditingController _winPassword;
   bool _savePassword = true;
+  bool _saveWinPassword = false;
   String? _directErr;
+  String? _winErr;
 
   @override
   void initState() {
@@ -362,6 +383,10 @@ class _DeviceDialogState extends State<_DeviceDialog> {
         TextEditingController(text: e?.relayServer ?? bind.mainGetOptionSync(key: 'relay-server'));
     _key = TextEditingController(text: e?.key ?? bind.mainGetOptionSync(key: 'key'));
     _password = TextEditingController();
+    // The stored logon password itself is never read back into the UI, only
+    // the fact that one exists.
+    _winPassword = TextEditingController();
+    _saveWinPassword = e?.winPasswordRef ?? false;
   }
 
   @override
@@ -373,6 +398,7 @@ class _DeviceDialogState extends State<_DeviceDialog> {
     _relay.dispose();
     _key.dispose();
     _password.dispose();
+    _winPassword.dispose();
     super.dispose();
   }
 
@@ -385,6 +411,22 @@ class _DeviceDialogState extends State<_DeviceDialog> {
       return;
     }
     if (_directErr != null) setState(() => _directErr = null);
+    final winText = _winPassword.text;
+    if (winText.isEmpty) {
+      // Keeping an already saved password is fine; turning the option on
+      // without a password would silently store nothing.
+      if (_saveWinPassword && widget.existing?.winPasswordRef != true) {
+        setState(() => _winErr = '开启后需要填写电脑登录密码');
+        return;
+      }
+    } else {
+      final winErr = rdValidateWinPassword(winText);
+      if (winErr != null) {
+        setState(() => _winErr = winErr);
+        return;
+      }
+    }
+    if (_winErr != null) setState(() => _winErr = null);
     final device = RdDevice(
       id: id,
       name: _name.text.trim().isEmpty ? id : _name.text.trim(),
@@ -393,12 +435,14 @@ class _DeviceDialogState extends State<_DeviceDialog> {
       relayServer: _relay.text.trim(),
       key: _key.text.trim(),
       directAddr: direct.value,
+      winPasswordRef: _saveWinPassword,
       lastConnected: widget.existing?.lastConnected ?? 0,
       createdAt: widget.existing?.createdAt ?? 0,
     );
-    Navigator.of(context).pop(
-        _DeviceDraft(device, _password.text, _savePassword,
-            addrFix: direct.fixNote));
+    Navigator.of(context).pop(_DeviceDraft(device, _password.text, _savePassword,
+        addrFix: direct.fixNote,
+        winPassword: _winPassword.text,
+        saveWinPassword: _saveWinPassword));
   }
 
   @override
@@ -455,6 +499,40 @@ class _DeviceDialogState extends State<_DeviceDialog> {
               subtitle: Text('使用 Android Keystore 加密存储',
                   style: TextStyle(fontSize: 11)),
             ),
+            // RemoteDesk 指纹解锁：Windows 账户密码单独存一份，只在指纹
+            // 验证通过后解密，并交给上游的输入通道"打字"到锁屏界面。
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _saveWinPassword,
+              onChanged: (v) => setState(() {
+                _saveWinPassword = v ?? false;
+                if (!_saveWinPassword) {
+                  _winPassword.clear();
+                  _winErr = null;
+                }
+              }),
+              title: Text('保存电脑登录密码（用于指纹解锁）',
+                  style: TextStyle(fontSize: 13)),
+              subtitle: Text(
+                  '密码将用 Android Keystore 加密保存在本机，仅用于远控时自动输入；指纹验证通过后才解密',
+                  style: TextStyle(fontSize: 11)),
+            ),
+            if (_saveWinPassword)
+              TextField(
+                controller: _winPassword,
+                obscureText: true,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: InputDecoration(
+                  labelText: '电脑登录密码（Windows 账户密码）',
+                  helperText: widget.existing?.winPasswordRef == true
+                      ? '已保存一份；留空表示不修改'
+                      : '仅支持 ASCII 密码：字母、数字、英文符号',
+                  helperMaxLines: 2,
+                  errorText: _winErr,
+                  errorMaxLines: 3,
+                ),
+              ),
           ],
         ),
       ),

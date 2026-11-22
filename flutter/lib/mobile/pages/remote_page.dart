@@ -23,6 +23,7 @@ import '../../models/model.dart';
 import '../../models/platform_model.dart';
 import '../../models/shortcut_model.dart';
 import '../../remotedesk/privacy_shield.dart';
+import '../../remotedesk/unlock.dart';
 import '../../utils/image.dart';
 import '../widgets/dialog.dart';
 import '../widgets/custom_scale_widget.dart';
@@ -805,6 +806,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               top: 10,
               right: 10,
               child: QualityMonitor(gFFI.qualityMonitorModel),
+            ),
+            // RemoteDesk 指纹解锁：只有保存过电脑登录密码的设备才显示。被控端
+            // 是否停在锁屏界面在 Flutter 层没有可靠信号，所以按钮整场可用，
+            // 由用户看到 Windows 登录画面时点一下。
+            Positioned(
+              top: 10,
+              left: 10,
+              child: RdUnlockButton(sessionId: sessionId, deviceId: widget.id),
             ),
             Obx(() {
               final chatKeyboardRequested =
