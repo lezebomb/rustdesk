@@ -190,12 +190,16 @@ class RdDevicesPageState extends State<RdDevicesPage> {
     );
   }
 
+  /// Epoch milliseconds -> local wall clock. `DateTime.toString()` renders UTC
+  /// with a "Z" suffix and no offset, which showed 03:26 for an 11:26 attempt.
+  static String _fmtLocal(int ms) {
+    final t = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
+  }
+
   Widget _deviceCard(RdDevice d) {
-    final last = d.lastConnected == 0
-        ? '从未尝试'
-        : DateTime.fromMillisecondsSinceEpoch(d.lastConnected)
-            .toString()
-            .substring(0, 16);
+    final last = d.lastConnected == 0 ? '从未尝试' : _fmtLocal(d.lastConnected);
     return Card(
       margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: InkWell(
