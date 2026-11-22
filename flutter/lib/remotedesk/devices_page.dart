@@ -66,11 +66,9 @@ class RdDevicesPageState extends State<RdDevicesPage> {
   /// registers with the paired server before the user taps anything.
   Future<void> _applyPrimaryServer() async {
     if (_store.devices.isEmpty) return;
-    final sorted = [..._store.devices]..sort((a, b) {
-        final av = a.lastConnected ?? DateTime.fromMillisecondsSinceEpoch(0);
-        final bv = b.lastConnected ?? DateTime.fromMillisecondsSinceEpoch(0);
-        return bv.compareTo(av);
-      });
+    // lastConnected is epoch milliseconds (int), not a DateTime.
+    final sorted = [..._store.devices]
+      ..sort((a, b) => b.lastConnected.compareTo(a.lastConnected));
     final primary = sorted.first;
     if (primary.server.isEmpty) return;
     final current = bind.mainGetOptionSync(key: 'custom-rendezvous-server');
