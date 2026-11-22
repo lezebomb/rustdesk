@@ -997,7 +997,18 @@ pub fn codec_thread_num(limit: usize) -> usize {
         res = (((max as f64) - avg.one) * 0.5).round() as usize;
     }
     res = std::cmp::min(res, max / 2);
-    res = std::cmp::min(res, memory as usize / 2);
+    #[cfg(target_os = "android")]
+    {
+        // RemoteDesk: Android 上报的 available_memory 经常被严重低估（本机平板报 2G），
+        // 上游的 memory / 2 会把解码线程压到 1，2K 软解明显跟不上。
+        // 这里给内存上限一个 4 线程地板，仍受 CPU 核数与负载估计约束。
+        let by_mem = std::cmp::max(memory as usize / 2, 4);
+        res = std::cmp::min(res, by_mem);
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        res = std::cmp::min(res, memory as usize / 2);
+    }
     //  Use common thread count
     res = match res {
         _ if res >= 64 => 64,
