@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/common/formatter/id_formatter.dart';
+import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/mobile/pages/home_page.dart';
 import 'package:flutter_hbb/remotedesk/device_store.dart';
+import 'package:flutter_hbb/remotedesk/direct_addr.dart';
 import 'package:flutter_hbb/remotedesk/privacy_shield.dart';
 import 'package:flutter_hbb/remotedesk/secure_store.dart';
 
@@ -39,6 +41,7 @@ class RdDevicesPageState extends State<RdDevicesPage> {
     super.initState();
     _store.addListener(_onStoreChanged);
     _store.load().then((_) => _applyPrimaryServer());
+    _ensurePrivacyModeDefault();
   }
 
   @override
@@ -83,6 +86,19 @@ class RdDevicesPageState extends State<RdDevicesPage> {
     }
   }
 
+  /// `privacy_mode` is a display option (`kOptionPrivacyMode` in
+  /// `lib/consts.dart`, "Settings -> Display -> Other default options"), so it
+  /// lives in `RustDesk_default.toml`: `mainSetLocalOption` would write a key
+  /// nothing reads. `mainSetUserDefaultOption` is the API for that file
+  /// (`src/ui_interface.rs:1356` -> `UserDefaultConfig::set`). Only the default
+  /// is filled in, so a user who turns it off keeps that choice.
+  Future<void> _ensurePrivacyModeDefault() async {
+    if (bind.mainGetUserDefaultOption(key: kOptionPrivacyMode).isNotEmpty) {
+      return;
+    }
+    await bind.mainSetUserDefaultOption(key: kOptionPrivacyMode, value: 'Y');
+  }
+
   Future<void> _connect(RdDevice device, {bool forceRelay = false}) async {
     // Apply this device's server settings first so the connection goes through
     // the server it was paired with.
@@ -91,7 +107,23 @@ class RdDevicesPageState extends State<RdDevicesPage> {
     if (!mounted) return;
     await _store.touch(device.id);
     if (!mounted) return;
-    connect(context, device.id, password: password, forceRelay: forceRelay);
+    final directAddr = device.directAddr;
+    if (directAddr.isEmpty) {
+      // `connect()` returns before the session is up and upstream reports a
+      // rendezvous failure from Rust through a msgbox, so there is no Dart
+      // result to test here: warn on the attempt instead of after it.
+      showToast('当前网络下信令可能不可用，建议填写直连地址');
+    }
+    try {
+      // A literal IP (or host:port) is routed by `is_direct_ip_access` before
+      // the rendezvous client is involved, so it never touches hbbs.
+      await connect(context, directAddr.isEmpty ? device.id : directAddr,
+          password: password, forceRelay: forceRelay);
+    } catch (e) {
+      showToast(directAddr.isEmpty
+          ? '连接失败：$e\n当前网络下信令可能不可用，建议填写直连地址'
+          : '连接失败：$e');
+    }
   }
 
   Future<void> _confirmDelete(RdDevice device) async {
@@ -124,6 +156,8 @@ class RdDevicesPageState extends State<RdDevicesPage> {
     await _store.addOrUpdate(draft.device);
     await persistDevicePassword(
         draft.device.id, draft.password, draft.savePassword);
+    final fix = draft.addrFix;
+    if (fix != null) showToast(fix);
   }
 
   @override
@@ -241,6 +275,16 @@ class RdDevicesPageState extends State<RdDevicesPage> {
                         _statusChip(d),
                       ],
                     ),
+                    if (d.directAddr.isNotEmpty) ...[
+                      SizedBox(height: 2),
+                      Text('直连：${d.directAddr}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontFamily: 'monospace',
+                              color: MyTheme.accent)),
+                    ],
                     SizedBox(height: 2),
                     Text('最近尝试：$last',
                         style:
@@ -279,7 +323,11 @@ class _DeviceDraft {
   final RdDevice device;
   final String password;
   final bool savePassword;
-  _DeviceDraft(this.device, this.password, this.savePassword);
+
+  /// Set when the direct address was rewritten before saving, so the page can
+  /// tell the user what was stored.
+  final String? addrFix;
+  _DeviceDraft(this.device, this.password, this.savePassword, {this.addrFix});
 }
 
 class _DeviceDialog extends StatefulWidget {
@@ -293,11 +341,13 @@ class _DeviceDialog extends StatefulWidget {
 class _DeviceDialogState extends State<_DeviceDialog> {
   late final TextEditingController _name;
   late final TextEditingController _id;
+  late final TextEditingController _directAddr;
   late final TextEditingController _server;
   late final TextEditingController _relay;
   late final TextEditingController _key;
   late final TextEditingController _password;
   bool _savePassword = true;
+  String? _directErr;
 
   @override
   void initState() {
@@ -305,6 +355,7 @@ class _DeviceDialogState extends State<_DeviceDialog> {
     final e = widget.existing;
     _name = TextEditingController(text: e?.name ?? '');
     _id = TextEditingController(text: e?.id ?? '');
+    _directAddr = TextEditingController(text: e?.directAddr ?? '');
     _server = TextEditingController(
         text: e?.server ?? bind.mainGetOptionSync(key: 'custom-rendezvous-server'));
     _relay =
@@ -317,6 +368,7 @@ class _DeviceDialogState extends State<_DeviceDialog> {
   void dispose() {
     _name.dispose();
     _id.dispose();
+    _directAddr.dispose();
     _server.dispose();
     _relay.dispose();
     _key.dispose();
@@ -327,6 +379,12 @@ class _DeviceDialogState extends State<_DeviceDialog> {
   void _submit() {
     final id = _id.text.replaceAll(' ', '').trim();
     if (id.isEmpty) return;
+    final direct = checkDirectAddr(_directAddr.text);
+    if (!direct.ok) {
+      setState(() => _directErr = direct.error);
+      return;
+    }
+    if (_directErr != null) setState(() => _directErr = null);
     final device = RdDevice(
       id: id,
       name: _name.text.trim().isEmpty ? id : _name.text.trim(),
@@ -334,11 +392,13 @@ class _DeviceDialogState extends State<_DeviceDialog> {
       server: _server.text.trim(),
       relayServer: _relay.text.trim(),
       key: _key.text.trim(),
+      directAddr: direct.value,
       lastConnected: widget.existing?.lastConnected ?? 0,
       createdAt: widget.existing?.createdAt ?? 0,
     );
-    Navigator.of(context)
-        .pop(_DeviceDraft(device, _password.text, _savePassword));
+    Navigator.of(context).pop(
+        _DeviceDraft(device, _password.text, _savePassword,
+            addrFix: direct.fixNote));
   }
 
   @override
@@ -357,6 +417,16 @@ class _DeviceDialogState extends State<_DeviceDialog> {
               controller: _id,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(labelText: '远程 ID'),
+            ),
+            TextField(
+              controller: _directAddr,
+              decoration: InputDecoration(
+                labelText: '直连地址（可选）',
+                helperText: '裸 IPv6 或 IPv4，例如 2001:da8:...:2dbd，留空则用 ID 连接',
+                helperMaxLines: 2,
+                errorText: _directErr,
+                errorMaxLines: 2,
+              ),
             ),
             TextField(
               controller: _server,

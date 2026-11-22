@@ -15,6 +15,11 @@ class RdDevice {
   String server;
   String relayServer;
   String key;
+
+  /// Optional direct-IP target ("2001:db8::1", "1.2.3.4", "pc.lan:21118").
+  /// Empty means "connect by [id] through the rendezvous server".
+  String directAddr;
+
   int lastConnected;
   int createdAt;
 
@@ -25,6 +30,7 @@ class RdDevice {
     this.server = '',
     this.relayServer = '',
     this.key = '',
+    this.directAddr = '',
     this.lastConnected = 0,
     this.createdAt = 0,
   });
@@ -36,6 +42,7 @@ class RdDevice {
         'server': server,
         'relayServer': relayServer,
         'key': key,
+        'directAddr': directAddr,
         'lastConnected': lastConnected,
         'createdAt': createdAt,
       };
@@ -47,6 +54,8 @@ class RdDevice {
         server: (m['server'] ?? '').toString(),
         relayServer: (m['relayServer'] ?? '').toString(),
         key: (m['key'] ?? '').toString(),
+        // Devices saved before M2 have no such key; they keep working by ID.
+        directAddr: (m['directAddr'] ?? '').toString(),
         lastConnected: (m['lastConnected'] as num?)?.toInt() ?? 0,
         createdAt: (m['createdAt'] as num?)?.toInt() ?? 0,
       );
